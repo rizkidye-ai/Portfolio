@@ -187,6 +187,21 @@ figcaption{font-size:.86rem;color:var(--mut);margin-top:10px}
 footer{background:var(--ink);color:#8C8C87;padding:0 0 30px}
 footer .wrap{display:flex;justify-content:space-between;gap:16px;border-top:1px solid rgba(255,255,255,.16);padding-top:20px;font-weight:400}
 
+/* ---------- music toggle ---------- */
+.snd{position:fixed;right:calc(16px + env(safe-area-inset-right,0px));bottom:calc(16px + env(safe-area-inset-bottom,0px));z-index:20;
+  display:inline-flex;align-items:center;gap:10px;padding:13px 17px;border-radius:999px;border:1.5px solid var(--white);
+  background:var(--ink);color:var(--white);cursor:pointer;box-shadow:0 12px 26px -10px rgba(0,0,0,.55);transition:transform .18s,background .18s,color .18s}
+.snd:hover{transform:translateY(-3px)}
+.snd:focus-visible{outline:3px solid var(--acc);outline-offset:3px}
+.snd[aria-pressed="true"]{background:var(--acc);color:var(--ink);border-color:var(--ink)}
+.snd[hidden]{display:none}
+.eq{display:inline-flex;align-items:flex-end;gap:2px;height:12px}
+.eq i{width:3px;height:3px;background:currentColor;transform-origin:bottom}
+.snd[aria-pressed="true"] .eq i{height:12px;animation:eq .8s ease-in-out infinite alternate}
+.snd[aria-pressed="true"] .eq i:nth-child(2){animation-delay:-.35s}
+.snd[aria-pressed="true"] .eq i:nth-child(3){animation-delay:-.6s}
+@keyframes eq{from{transform:scaleY(.25)}to{transform:scaleY(1)}}
+
 /* ---------- responsive ---------- */
 @media (max-width:900px){
   .case{grid-template-columns:1fr;gap:22px}
@@ -225,7 +240,7 @@ footer .wrap{display:flex;justify-content:space-between;gap:16px;border-top:1px 
 .js .reveal.in{opacity:1;transform:none}
 @media (prefers-reduced-motion:reduce){
   html{scroll-behavior:auto}
-  .title .g,.ring{animation:none}
+  .title .g,.ring,.snd .eq i{animation:none!important}
   .card,.wheel{transition:none}
   .js .fan:not(.on) .card{transform:rotate(calc(var(--i) * var(--step)));opacity:1}
   .js .reveal{opacity:1;transform:none;transition:none}
@@ -453,6 +468,7 @@ footer .wrap{display:flex;justify-content:space-between;gap:16px;border-top:1px 
 </div></div>
 </main>
 <footer><div class="wrap lab"><span>Muhammad Rizki Rahmadani, 2026.</span><span>Banda Aceh, Indonesia</span></div></footer>
+<button id="snd" class="snd lab" type="button" aria-pressed="false"><span class="eq" aria-hidden="true"><i></i><i></i><i></i></span><span id="sndt">Play music</span></button>
 
 <script>
 (function(){
@@ -494,6 +510,69 @@ footer .wrap{display:flex;justify-content:space-between;gap:16px;border-top:1px 
     var i=Array.prototype.indexOf.call(e.parentNode.children,e);
     e.style.transitionDelay=Math.min(i*70,280)+'ms';
     e.classList.add('reveal');io.observe(e);
+  });
+})();
+</script>
+<script>
+/* Background music: a slow ambient loop made in the browser (no audio file).
+   Off until the visitor presses the button; the same button mutes it again. */
+(function(){
+  var btn=document.getElementById('snd'),txt=document.getElementById('sndt');
+  var AC=window.AudioContext||window.webkitAudioContext;
+  if(!btn||!AC){if(btn)btn.hidden=true;return}
+  var ctx,master,bus,timer,next=0,step=0,on=false,VOL=0.34,BAR=8;
+  var CHORDS=[[146.83,220.00,277.18,369.99],[123.47,220.00,293.66,369.99],[98.00,196.00,246.94,369.99],[110.00,220.00,277.18,329.63]];
+  var NOTES=[587.33,659.25,739.99,880.00,987.77,1174.66];
+  function build(){
+    ctx=new AC();
+    master=ctx.createGain();master.gain.value=0;master.connect(ctx.destination);
+    var lp=ctx.createBiquadFilter();lp.type='lowpass';lp.frequency.value=1500;lp.connect(master);
+    var dl=ctx.createDelay(1.5);dl.delayTime.value=0.46;
+    var fb=ctx.createGain();fb.gain.value=0.36;dl.connect(fb);fb.connect(dl);dl.connect(lp);
+    bus=ctx.createGain();bus.connect(lp);bus.connect(dl);
+  }
+  function tone(f,t,dur,type,peak,att,rel,det){
+    var o=ctx.createOscillator(),g=ctx.createGain();
+    o.type=type;o.frequency.value=f;o.detune.value=det||0;
+    g.gain.setValueAtTime(0.0001,t);
+    g.gain.linearRampToValueAtTime(peak,t+att);
+    g.gain.setValueAtTime(peak,t+dur-rel);
+    g.gain.linearRampToValueAtTime(0.0001,t+dur);
+    o.connect(g);g.connect(bus);o.start(t);o.stop(t+dur+0.05);
+  }
+  function bar(t){
+    CHORDS[step%CHORDS.length].forEach(function(f,i){
+      tone(f,t,BAR+1.6,'sine',i?0.10:0.15,2.2,2.6,-5);
+      tone(f,t,BAR+1.6,'triangle',0.03,2.6,2.6,6);
+    });
+    for(var k=0;k<3;k++){
+      if(Math.random()<0.75)tone(NOTES[Math.floor(Math.random()*NOTES.length)],t+1+k*2.4+Math.random()*0.6,2.2,'sine',0.045,0.02,2.0,0);
+    }
+    step++;
+  }
+  function tick(){while(next<ctx.currentTime+1.5){bar(next);next+=BAR}}
+  function fade(v,s){var t=ctx.currentTime;master.gain.cancelScheduledValues(t);master.gain.setValueAtTime(master.gain.value,t);master.gain.linearRampToValueAtTime(v,t+s)}
+  function play(){
+    if(!ctx)build();
+    ctx.resume();
+    if(next<ctx.currentTime+0.1)next=ctx.currentTime+0.1;
+    tick();clearInterval(timer);timer=setInterval(tick,500);
+    fade(VOL,1.6);
+  }
+  function stop(){
+    if(!ctx)return;
+    clearInterval(timer);fade(0,0.5);
+    setTimeout(function(){if(!on||document.hidden)ctx.suspend()},650);
+  }
+  btn.addEventListener('click',function(){
+    on=!on;
+    btn.setAttribute('aria-pressed',on?'true':'false');
+    txt.textContent=on?'Mute music':'Play music';
+    if(on)play();else stop();
+  });
+  document.addEventListener('visibilitychange',function(){
+    if(!on)return;
+    if(document.hidden)stop();else play();
   });
 })();
 </script>
